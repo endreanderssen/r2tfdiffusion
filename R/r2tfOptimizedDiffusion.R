@@ -103,6 +103,23 @@ signalOnFeedbackNetwork <-function(network,outputNode,inputNode,
 
 #' Compute Diffusion Map for Signal Propagation
 #'
+#' Note on Parallel Processing in Network Diffusion
+#'
+#' This function runs a parallelized signal propagation model using `foreach` for 
+#' efficient computation.
+#'
+#' @note This function requires a parallel backend to be registered for `foreach` to work.
+#' Users can register a parallel backend using:
+#' 
+#' \code{
+#' library(doParallel)
+#' cl <- makeCluster(detectCores() - 1)  # Use available cores
+#' registerDoParallel(cl)
+#' }
+#' The code is parallelized by sample so more cores than you have samples in the
+#' will give no benefit it may therefore be best to dial down the
+#' default on large clusters 
+#'
 #' @param receptors Character vector specifying receptor nodes.
 #' @param TFs Character vector specifying transcription factor nodes.
 #' @param feedbackNodes Character vector specifying nodes that act as signal sinks.
@@ -120,7 +137,6 @@ signalOnFeedbackNetwork <-function(network,outputNode,inputNode,
 #' @import doParallel
 #' @import data.table
 #' @export
-
 diffusionMap2 <- function(receptors, TFs,feedbackNodes, M, network,
 			  inputSignal = 0.99, nTicks=2000,x = rep(1,nrow(network))){
   setDTthreads(1)
@@ -344,7 +360,71 @@ evaluateNetwork2 <- function(x,network,receptor,TFs,predData,M,
      return(score)
 }
 
-
+#' Optimize Network Edge Weights to Improve TF Activation Prediction
+#'
+#' This function optimizes the edge weights of a signaling network to maximize the correlation
+#' between network connectivity and transcription factor (TF) activation. It first runs the 
+#' raw diffusion model, then optimizes the network using the `nloptr` package, and finally 
+#' evaluates the optimized network on a test dataset if provided.
+#'
+#' Note on Parallel Processing in Network Diffusion
+#'
+#' This function runs a parallelized signal propagation model using `foreach` for 
+#' efficient computation.
+#'
+#' @note This function requires a parallel backend to be registered for `foreach` to work.
+#' Users can register a parallel backend using:
+#' 
+#' \code{
+#' library(doParallel)
+#' cl <- makeCluster(detectCores() - 1)  # Use available cores
+#' registerDoParallel(cl)
+#' }
+#' The code is parallelized by sample so more cores than you have samples in the
+#' (ex vivo) training data will give no benefit it may therefore be best to dial down the
+#' default on large clusters 
+#' 
+#' To stop parallel execution:
+#' 
+#' \code{
+#' stopCluster(cl)
+#' }
+#'
+#' @param network A dataframe with two columns (`from`, `to`), representing the signaling network.
+#' @param receptor Character, the receptor gene ID.
+#' @param TFs Character vector, transcription factor gene IDs.
+#' @param feedbackNodes Character vector, gene IDs acting as feedback regulators (signal sinks).
+#' @param Mtrain A numeric matrix of gene expression data (rows = genes, cols = training samples).
+#' @param tfAct A numeric matrix of observed TF activation levels (rows = training samples, cols = TFs).
+#' @param alpha Numeric, regularization weight for network sparsity (default: `0.01`).
+#' @param Mtest A numeric matrix of gene expression data for the test dataset (optional, default: `NULL`).
+#' @param patientData Optional patient dataset for validation (default: `NULL`).
+#' @param maxeval Integer, maximum number of function evaluations in the optimization process (default: `250`).
+#' @param nTicks Integer, number of time steps for signal propagation in diffusion model (default: `2000`).
+#' @param x0 Numeric vector, initial values for network edge weight optimization (default: `rep(1, nrow(network))`).
+#'
+#' @return A list containing:
+#'   - `opt`: Optimization results from `nloptr()`.
+#'   - `corRaw`: Correlation results before optimization.
+#'   - `corOpt`: Correlation results after optimization.
+#'   - `rawRun`: Results from initial (unoptimized) network diffusion.
+#'   - `optRun`: Results from optimized network diffusion.
+#'   - `testSummary`: A list containing raw and optimized network connectivity dataset results for each TF (if `Mtest` is provided).
+#'
+#' @export
+#'
+#' @examples
+#' # Example using example dataset (assuming r2tfData contains required inputs)
+#' data(r2tfData)
+#' optimized_results <- optimizeR2TF(
+#'     network = r2tfData$network,
+#'     receptor = r2tfData$receptors,
+#'     TFs = r2tfData$TFs,
+#'     feedbackNodes = r2tfData$feedbackNodes,
+#'     Mtrain = r2tfData$M,
+#'     tfAct = r2tfData$predData
+#' )
+#' print(optimized_results)
 optimizeR2TF<- function(network,
                        receptor,
                        TFs,
@@ -356,9 +436,11 @@ optimizeR2TF<- function(network,
                        patientData = NULL,
                        maxeval = 250,
                        nTicks = 2000,
-		       x0 = rep(1, nrow(network))){
+		       x0 = NULL){
         #run raw diffusion
-        
+        if(is.null(x0)){
+	    x0 <- rep(1,nrow(network))	   
+        }
         opts <- list(algorithm = 'NLOPT_LN_BOBYQA' ,
                          maxeval = maxeval)
 
@@ -388,7 +470,7 @@ optimizeR2TF<- function(network,
          optRun <- diffusionMap2(receptors = receptor,
                              TFs = TFs,
                              feedbackNodes= feedbackNodes,
-                             M = Mctrl,
+                             M = Mtrain,
                              network = network,
                              inputSignal = 0.99,
                              nTicks= nTicks,

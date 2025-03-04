@@ -1,0 +1,17 @@
+Package: r2tfdiffusion
+Title: Optimized receptor to transcription factor diffusion with the option of optimizing to reproduce ex vivo experiments
+Version: 0.0.0.9000
+Authors@R: 
+    person("Endre", "Anderssen", , "endre.anderssen@uit.no",
+           role = c("aut", "cre"),
+           comment = c(ORCID = "0000-0002-2995-6335"))
+Description: Optimized receptor to transcription factor diffusion with the option of optimizing to reproduce ex vivo experiments
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.2.3
+Imports: data.table,stats,foreach,doParallel
+Suggests: 
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr

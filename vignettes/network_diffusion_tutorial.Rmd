@@ -1,0 +1,185 @@
+---
+title: "network_diffusion_tutorial"
+author: "Endre Anderssen"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{network_diffusion_tutorial}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+# Introduction
+#' ## Step 0: Setting Up Parallel Computing
+#' ### Why Parallel Processing?
+#' ### Registering a Backend
+#' ## Step 1 The data
+#' ## Step 2 Network diffusion
+#' ### Diffusion on a network
+#' ### Quantifying connectivity
+#' ## Step 3 Optimizing network weights
+#' ### Run optimization
+#' ### Use the optimized network on clinical data
+#'
+
+
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+\
+
+# Introduction
+
+This vignette demonstrates how to:
+
+0. **Set up parallel processing** for faster computation.
+1. **Load and and documents example data**.
+2. **Run network diffusion** to quantify connectivity.
+3. **Optimize network connectivity** to improve prediction.
+4. **Analyze how optimized connectivity relates to clinical outcomes**.
+
+---
+
+# **Step 0: Setting Up Parallel Computing**
+
+If you are familliar with doParallel backends seto one up with up to the number workers you have samples then jump to **Step 1**.
+
+The diffusion calculation can be time consuming dependent on the size of the network and the number of time steps used. To speed things up the code has been parallelized to run diffusioon oin different samples in paralell. Best results especially when optimizing is therefore obtained when you set up a parallel backend for for `doParallel` with as many cores as you have samples in the training data
+
+
+```{r,eval = F}
+library(doParallel)
+# Detect available cores and register parallel backend
+cl <- makeCluster(detectCores() - 1)
+registerDoParallel(cl)
+# Verify parallel backend is active
+foreach::getDoParWorkers()
+```
+
+# **Step 1: The example data**
+If you have not done so already attach the _r2tfdiffusion_ library 
+
+```{r setup}
+library(r2tfdiffusion)
+```
+
+
+
+You can load the example dataset using the `data` function
+```r
+data(r2tfData)
+names(r2tfData)
+```
+This creates a r2tfData object in your R session. This is a list containing the following elements:
+ 
+ - _network_:contains a data frame with columns `from` and `to` which gives
+the connectivity of the signalling network.
+ - _feedbackNodes_:genes in the network that can act as signal inhibitors. These will recive signal but not pass it on.
+ -  _tfAct_: the activation of transcription factors in the ex vivo experiment calculaated using the TIGER method.
+ - _Mexvivo_: Gene expression data taken before ex vivo stimulation  
+ - _Mclinical_: Gene expression data from clinical samples
+ - _patientData_: Outcome data for patients
+
+# **Step 2 Run diffusion**
+
+Using the data in the example we now run signal diffusion from the _TLR4_ receptor to the transcription factors 'JUN' an 'RELA'. Both receptors and transcription factors must be nodes in _network_, otherwise there is no where to start or end the flow of signal. Keep in mind that many transcription factor databases use names that are not official gene symbols but protein names or names of transcription factor complexes.
+
+```r
+# Run initial diffusion model
+diff_result <- diffusionMap2(receptors = 'TLR4',
+    TFs = c('JUN','RELA'),
+    feedbackNodes = r2tfData$feedbackNodes,
+    M = r2tfData$Mexvivo,
+    network = r2tfData$network,
+    inputSignal = 0.99,
+    nTicks = 2000)
+```
+The diffusion returns time curves for the signal originating at each receptor at each of the output nodes (Transcription factors). 
+You can extract the time curves for a specific combination of receptor and output node using the _getCurves_ function
+
+```r
+# Extract signal curves for a TF (e.g., RELA)
+curves <- getCurves(X = diff_result, TF = "RELA", receptor = "TLR4")i
+
+# Plot diffusion curve over time
+plot(curves$diffCurves[1,], type = "l", main = "Diffusion Curve for RELA",
+     xlab = "Time Steps", ylab = "Signal Accumulation")
+```
+The plot shows the curve for the first ex vivo sample. The curves from the basis of quantifying receptor to TF network connectivity
+We have chosen to use the amount o signal at the TF at athe time of maximum variability asthe measure, but other measures are certainly possible. 
+
+```r
+max_var_time <- which.max(apply(curves$diffCurves, 2, var))
+cat("Maximum variance occurs at time step:", max_var_time)
+hist(curves[,max_var_time])
+```
+The connectivity correlates somewhat to the transcription factor activation after
+stimulation.
+
+```r
+plot(curves$diffCurves[,max_var_time],r2tfData$tfAct[,'RELA'],
+     xlab = 'Network connectivity',ylab = 'RELA activation')
+```
+
+## **Step 3: Optimize nework**
+
+Optimizing the network weights can improve the correlation between network connectivity
+and transcription factor activation.  
+
+```r
+optimized_network <- optimizeR2TF(
+    network = r2tfData$network,
+    receptor = 'TLR4',
+    TFs = c('JUN','RELA'),
+    feedbackNodes = r2tfData$feedbackNodes,
+    Mtrain = r2tfData$Mexvivo,
+    tfAct = r2tfData$tfAct)
+```
+The _optimizeR2TF_ function also includes optional inputs to compute network connectivity for a test dataset either an independent ex vivo test set or a clinical dataset that can be used for prediction.
+
+## **Step 4: Apply optimized network to clinical data**
+
+The optimized network can then be applied to clinical data and tested for relevance for clinical outcomes. The _optimized_network_ object contains correlations with the original network weights correlations with the optmized network the diffusion runs before and after optimization and if a test set is supplied in the function call network connectivities for the test samples. Optimized network edge weights can be found in the _optimized_network$opt$solution_ slot. These weights can then be used to calculate network connectivity in clinical samples
+
+
+```r
+# Load clinical gene expression dataset
+
+# Compute connectivity using optimized weights
+clinical_diffusion <- diffusionMap2(
+    receptors = 'TLR4',
+    TFs = c('JUN','RELA'),
+    feedbackNodes = r2tfData$feedbackNodes,
+    M = r2tfData$Mclinical,
+    network = r2tfData$network,
+    inputSignal = 0.99,
+    nTicks = 2000,
+    x = optimized_network$opt$solution
+)
+```
+
+You can calculate the network connectivity for the transcription factor of your choice.  
+
+```r
+curves <- getCurves(X = clinical_diffusion, TF = "JUN", receptor = "TLR4")
+max_var_time <- which.max(apply(curves$diffCurves,2,var))
+connectivityJUN <- curves$diffCurves[,max_var_time]
+```
+
+The network connectivity based on the optimized network 
+can now be used to model e.g. a clinical outcome.
+
+```r
+# Compare connectivity between treatment responders & non-responders
+boxplot(connectivityJUN ~ r2tfData$patientData$healing,
+        main = "Optimized Network Connectivity by Response Group",
+        xlab = "Response Group", ylab = "Network Connectivity")
+
+wilcox.test(connectivityJUN ~r2tfData$patientData$remission)
+wilcox.test(r2tfData$Mclinical['TLR4',] ~r2tfData$patientData$remission)
+
+```
+The network connectivity can be used as input to represent a bbiological process or pathway of interest to statistical test and appears to be a better predictor than just the expression level of key pathway members such as the receptor. This will be useful in predictive models, potentially in combination with key genes or network connectivities form other networks relevant for the disease. 

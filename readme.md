@@ -20,7 +20,7 @@ registerDoParallel(forkCluster)
 ```
 
 If you are unfamilliar with doParallel setup is exlpained in the vignette. 
-After using the package shut down the parallel backend  using
+
 
 ```r
 library(r2tfdiffusion)
@@ -43,6 +43,6 @@ browseVignettes("r2tfdiffusion")
 After using the package shut down the parallel backend  using
 ```r
 stopCluster(forkCluster)
-
+```
 
 This package is licensed under the MIT License.

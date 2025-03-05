@@ -9,10 +9,19 @@ You can install the package directly from GitHub using:
 ```r
 install.packages("devtools")  # Install devtools if you haven't already
 devtools::install_github("endreanderssen/r2tfdiffusion")
+```
 
-The package relies on paralell processing using the doParallel framework. Set up workers up to one per sample. If you are unfamilliar with doParallel setup is exlpained in the vignette. 
+The package relies on paralell processing using the doParallel framework. 
+Set up workers up to one per sample. 
 
-After setting up
+```r
+forkCluster <- makeCluster(4,'FORK',timeout = 100000)
+registerDoParallel(forkCluster)
+```
+
+If you are unfamilliar with doParallel setup is exlpained in the vignette. 
+After using the package shut down the parallel backend  using
+
 ```r
 library(r2tfdiffusion)
 data(r2tfData)
@@ -31,5 +40,9 @@ for a complete tutorial, check the vignette:
 ```r
 browseVignettes("r2tfdiffusion")
 ```
+After using the package shut down the parallel backend  using
+```r
+stopCluster(forkCluster)
+
 
 This package is licensed under the MIT License.

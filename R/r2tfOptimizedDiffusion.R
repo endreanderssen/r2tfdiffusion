@@ -453,7 +453,7 @@ optimizeR2TF<- function(network,
                          TFs = TFs,
                          receptor = receptor)
 
-        optRes <- nloptr(x0 = x0,eval_f = evaluateNetwork2,
+        optRes <- nloptr::nloptr(x0 = x0,eval_f = evaluateNetwork2,
                              ub = rep(2,nrow(network)), 
 			     lb = rep(0,nrow(network)),
                              opts = opts,
